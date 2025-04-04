@@ -35,10 +35,29 @@ func (s *Service) AddTgChat(id int) error {
 	return err
 }
 
-func (s *Service) AddLink(chatID int, link model.LinkRequestDTO) (*model.LinkResponseDTO, error) {
+func (s *Service) DeleteTgChat(id int) error {
+
+	err := s.db.DeleteTgChat(id)
+	if err != nil {
+		s.log.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+// =========== Links ===========
+func (s *Service) AddLink(chatID int, link model.LinkRequestDTO) (*model.Link, error) {
 	linkDAO, err := s.db.AddLink(link.Link, link.Tag, link.TokenID, chatID)
 	if err != nil {
 		return nil, err
 	}
-	return linkDAO.ToResponseDTO(), nil
+	return linkDAO, nil
+}
+
+func (s *Service) GetLinks(chatID int) ([]model.Link, error) {
+	linksDAO, err := s.db.GetLinks(chatID)
+	if err != nil {
+		return nil, err
+	}
+	return linksDAO, nil
 }

@@ -41,6 +41,31 @@ func (p *Postgres) AddChat(id int) error {
 	return nil
 }
 
+// func (p *Postgres) GetTgChat(id int) (*model.Chat, error) {
+// 	query := `SELECT id, type FROM chats WHERE id = $1`
+// 	chat := model.Chat{}
+// 	err := p.DB.Get(&chat, query, id)
+// 	if err != nil {
+// 		p.log.Error("Can't select chat", "id", id, "err", err)
+// 		return nil, err
+// 	}
+// 	return &chat, nil
+// }
+
+func (p *Postgres) DeleteTgChat(id int) error {
+	query := `DELETE FROM chats WHERE id = $1`
+	res, err := p.DB.Exec(query, id)
+	if err != nil {
+		p.log.Error(err.Error())
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows < 1 {
+		return fmt.Errorf("nothing deleted")
+	}
+	return nil
+}
+
 // ================= Links =================
 
 // Дублирование элементов сделано намерено,
@@ -59,6 +84,7 @@ func (p *Postgres) AddLink(link string, tag string, tokenID int, chatID int) (*m
 	// Вставляем запись в таблицу links
 	query := `INSERT INTO links (link, tag, token_id) VALUES ($1, $2, $3) RETURNING id`
 	var newID int
+	p.log.Debug("", "tokenID", tokenID)
 	if tokenID == 0 {
 		err = tx.Get(&newID, query, link, tag, nil)
 	} else {
@@ -82,4 +108,22 @@ func (p *Postgres) AddLink(link string, tag string, tokenID int, chatID int) (*m
 	}
 
 	return model.NewLink(newID, link, tag, tokenID), nil
+}
+
+func (p *Postgres) GetLinks(chatID int) ([]model.Link, error) {
+	query := `SELECT links.id, links.link, links.tag, links.token_id FROM links 
+			  JOIN chats_links on links.id = chats_links.link_id
+			  WHERE chats_links.chat_id = $1`
+	var links []model.Link
+	err := p.DB.Select(&links, query, chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	p.log.Debug("", "", len(links))
+	for _, link := range links {
+		p.log.Debug(link.Link)
+	}
+
+	return links, nil
 }

@@ -4,7 +4,7 @@ type Link struct {
 	ID      int    `db:"id"`
 	Link    string `db:"link"`
 	Tag     string `db:"tag"`
-	TokenID int    `db:"token_id"`
+	TokenID *int   `db:"token_id"`
 }
 
 type Chat struct {
@@ -13,9 +13,12 @@ type Chat struct {
 }
 
 func NewLink(id int, link, tag string, tokenID int) *Link {
-	return &Link{id, link, tag, tokenID}
+	return &Link{id, link, tag, &tokenID}
 }
 
 func (link *Link) ToResponseDTO() *LinkResponseDTO {
-	return &LinkResponseDTO{link.ID, link.Link, link.Tag, link.TokenID}
+	if link.TokenID != nil {
+		return &LinkResponseDTO{link.ID, link.Link, link.Tag, *link.TokenID}
+	}
+	return &LinkResponseDTO{link.ID, link.Link, link.Tag, 0}
 }
