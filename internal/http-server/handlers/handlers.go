@@ -29,7 +29,7 @@ func RegisterRoutes(e *echo.Echo, svc *service.Service) {
 	e.DELETE("/tg-chat/:id", h.DeleteTgChat)
 	e.POST("/links", h.AddLink)
 	e.GET("/links", h.GetLinks)
-	// e.DELETE("links") самое сложное, поскольку нужно заджойнить
+	e.DELETE("/links", h.DeleteLink)
 }
 
 func RegisterMiddlewares(e *echo.Echo) {
@@ -98,8 +98,30 @@ func (h *Handler) AddLink(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
+	if linkDAO == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "such link already exists")
+	}
 	linkResp := linkDAO.ToResponseDTO()
 	return c.JSON(http.StatusCreated, linkResp)
+}
+
+func (h *Handler) DeleteLink(c echo.Context) error {
+	var linkReq model.LinkDeleteRequestDTO
+	if err := c.Bind(&linkReq); err != nil {
+		return err
+	}
+
+	chatID, httpErr := validateTgChatHeader(c)
+	if httpErr != nil {
+		return httpErr
+	}
+
+	linkDAO, err := h.service.DeleteLink(chatID, linkReq)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	linkResp := linkDAO.ToResponseDTO()
+	return c.JSON(http.StatusOK, linkResp)
 }
 
 func (h *Handler) GetLinks(c echo.Context) error {
@@ -119,5 +141,5 @@ func (h *Handler) GetLinks(c echo.Context) error {
 		linksResponse[i] = *link.ToResponseDTO()
 	}
 
-	return c.JSON(http.StatusCreated, linksResponse)
+	return c.JSON(http.StatusOK, linksResponse)
 }

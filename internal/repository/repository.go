@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
 
@@ -73,12 +74,17 @@ func (p *Postgres) DeleteTgChat(id int) error {
 // который у каждого свой соответственно
 
 func (p *Postgres) AddLink(link string, tag string, tokenID int, chatID int) (*model.Link, error) {
+	linkFound, err := p.GetLink(chatID, link)
+	if err != nil || linkFound != nil {
+		return nil, err
+	}
+	p.log.Debug("here0")
+
 	// Начинаем транзакцию
 	tx, err := p.DB.Beginx()
 	if err != nil {
 		return nil, err
 	}
-
 	defer tx.Rollback()
 
 	// Вставляем запись в таблицу links
@@ -120,10 +126,66 @@ func (p *Postgres) GetLinks(chatID int) ([]model.Link, error) {
 		return nil, err
 	}
 
-	p.log.Debug("", "", len(links))
-	for _, link := range links {
-		p.log.Debug(link.Link)
+	return links, nil
+}
+
+func (p *Postgres) GetLink(chatID int, link string) (*model.Link, error) {
+	query := `SELECT links.id, links.link, links.tag, links.token_id FROM links
+			  JOIN chats_links cl on cl.link_id = links.id
+			  WHERE cl.chat_id = $1 and links.link = $2`
+	var linkRes model.Link
+	err := p.DB.Get(&linkRes, query, chatID, link)
+	p.log.Debug("herrr")
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
 	}
 
-	return links, nil
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return &linkRes, nil
+}
+
+func (p *Postgres) DeleteLink(chatID int, link string) (*model.Link, error) {
+	linkFound, err := p.GetLink(chatID, link)
+
+	if err != nil {
+		return nil, err
+	}
+	if linkFound == nil {
+		return nil, fmt.Errorf("not found such link")
+	}
+
+	// начать транзакцию
+	tx, err := p.DB.Beginx()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	// удалить ссылку
+	query := `DELETE FROM links
+			  WHERE links.id = $1`
+	_, err = tx.Exec(query, linkFound.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// удалить её токен
+	query = `DELETE FROM tokens
+			  WHERE tokens.id = $1`
+	if linkFound.TokenID != nil {
+		_, err := tx.Exec(query, *linkFound.TokenID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// завершить транзакцию
+	err = tx.Commit()
+	if err != nil {
+		return nil, err
+	}
+	return linkFound, nil
 }

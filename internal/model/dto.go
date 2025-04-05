@@ -6,6 +6,10 @@ type LinkRequestDTO struct {
 	TokenID int    `json:"token_id"`
 }
 
+type LinkDeleteRequestDTO struct {
+	Link string `json:"link"`
+}
+
 type LinkResponseDTO struct {
 	ID      int    `json:"id"`
 	Link    string `json:"link"`

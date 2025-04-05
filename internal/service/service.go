@@ -36,7 +36,6 @@ func (s *Service) AddTgChat(id int) error {
 }
 
 func (s *Service) DeleteTgChat(id int) error {
-
 	err := s.db.DeleteTgChat(id)
 	if err != nil {
 		s.log.Error(err.Error())
@@ -60,4 +59,13 @@ func (s *Service) GetLinks(chatID int) ([]model.Link, error) {
 		return nil, err
 	}
 	return linksDAO, nil
+}
+
+func (s *Service) DeleteLink(chatID int, link model.LinkDeleteRequestDTO) (*model.Link, error) {
+	linkDeleted, err := s.db.DeleteLink(chatID, link.Link)
+	if err != nil {
+		s.log.Error(err.Error())
+		return nil, err
+	}
+	return linkDeleted, nil
 }
