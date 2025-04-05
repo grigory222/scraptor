@@ -22,10 +22,6 @@ func NewService(db *repository.Postgres, log *slog.Logger) *Service {
 	return &Service{db: db, log: log}
 }
 
-func (s *Service) GetHello() string {
-	return "Hello, world!"
-}
-
 func (s *Service) AddTgChat(id int) error {
 	err := s.db.AddChat(id)
 	if err != nil {
