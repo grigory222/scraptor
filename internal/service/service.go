@@ -40,7 +40,6 @@ func (s *Service) DeleteTgChat(id int) error {
 	return nil
 }
 
-// =========== Links ===========
 func (s *Service) AddLink(chatID int, link model.LinkRequestDTO) (*model.Link, error) {
 	linkDAO, err := s.db.AddLink(link.Link, link.Tag, link.TokenID, chatID)
 	if err != nil {

@@ -65,7 +65,7 @@ func (h *Handler) DeleteTgChat(c echo.Context) error {
 
 // ============= Links =============
 
-func validateTgChatHeader(c echo.Context) (int, *echo.HTTPError) {
+func ValidateTgChatHeader(c echo.Context) (int, *echo.HTTPError) {
 	// 	Tg-Chat-Id from header
 	stringChatID := c.Request().Header.Get("Tg-Chat-Id")
 	if stringChatID == "" {
@@ -84,7 +84,11 @@ func (h *Handler) AddLink(c echo.Context) error {
 		return err
 	}
 
-	chatID, httpErr := validateTgChatHeader(c)
+	if linkReq.Link == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "link field is required")
+	}
+
+	chatID, httpErr := ValidateTgChatHeader(c)
 	if httpErr != nil {
 		return httpErr
 	}
@@ -106,7 +110,7 @@ func (h *Handler) DeleteLink(c echo.Context) error {
 		return err
 	}
 
-	chatID, httpErr := validateTgChatHeader(c)
+	chatID, httpErr := ValidateTgChatHeader(c)
 	if httpErr != nil {
 		return httpErr
 	}
@@ -120,7 +124,7 @@ func (h *Handler) DeleteLink(c echo.Context) error {
 }
 
 func (h *Handler) GetLinks(c echo.Context) error {
-	chatID, httpErr := validateTgChatHeader(c)
+	chatID, httpErr := ValidateTgChatHeader(c)
 	if httpErr != nil {
 		return httpErr
 	}

@@ -2,9 +2,9 @@ package handlers_test
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/grigory222/scraptor/internal/http-server/handlers"
@@ -18,20 +18,30 @@ type mockService struct {
 	mock.Mock
 }
 
+// добавим пустые реализации других методов интерфейса
 func (m *mockService) AddTgChat(id int) error {
 	args := m.Called(id)
 	return args.Error(0)
 }
 
-// добавим пустые реализации других методов интерфейса
-func (m *mockService) GetHello() string                                       { return "" }
-func (m *mockService) DeleteTgChat(id int) error                              { return nil }
-func (m *mockService) AddLink(int, model.LinkRequestDTO) (*model.Link, error) { return nil, nil }
-func (m *mockService) DeleteLink(int, model.LinkDeleteRequestDTO) (*model.Link, error) {
-	return nil, nil
+func (m *mockService) DeleteTgChat(id int) error {
+	args := m.Called(id)
+	return args.Error(0)
 }
-func (m *mockService) GetLinks(int) ([]model.Link, error) {
-	return nil, nil
+
+func (m *mockService) AddLink(userID int, req model.LinkRequestDTO) (*model.Link, error) {
+	args := m.Called(userID, req)
+	return args.Get(0).(*model.Link), args.Error(1)
+}
+
+func (m *mockService) DeleteLink(userID int, req model.LinkDeleteRequestDTO) (*model.Link, error) {
+	args := m.Called(userID, req)
+	return args.Get(0).(*model.Link), args.Error(1)
+}
+
+func (m *mockService) GetLinks(userID int) ([]model.Link, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]model.Link), args.Error(1)
 }
 
 func TestAddTgChat(t *testing.T) {
@@ -140,7 +150,7 @@ func TestDeleteTgChat(t *testing.T) {
 				m.On("DeleteTgChat", 456).Return(errors.New("not found"))
 			},
 			wantStatus: http.StatusNotFound,
-			wantBody:   "{\"message\":\"Couldn't delete tg-chat with such id: 456\\nError: not found\"}",
+			wantBody:   "Couldn't delete tg-chat with such id: 456\nError: not found",
 		},
 	}
 
@@ -160,12 +170,9 @@ func TestDeleteTgChat(t *testing.T) {
 			h := handlers.NewHandler(mockSvc)
 
 			err := h.DeleteTgChat(c)
-			if tt.param == "456" {
-				fmt.Print("hereeee")
-				fmt.Print(err)
-			}
 			if err != nil {
-				httpErr, ok := err.(*echo.HTTPError)
+				var httpErr *echo.HTTPError
+				ok := errors.As(err, &httpErr)
 				if ok {
 					assert.Equal(t, tt.wantStatus, httpErr.Code)
 					assert.Equal(t, tt.wantBody, httpErr.Message)
@@ -176,6 +183,237 @@ func TestDeleteTgChat(t *testing.T) {
 			} else {
 				assert.Equal(t, tt.wantStatus, rec.Code)
 				assert.Equal(t, tt.wantBody, rec.Body.String())
+			}
+
+			mockSvc.AssertExpectations(t)
+		})
+	}
+}
+
+func TestValidateTgChatHeader(t *testing.T) {
+	tests := []struct {
+		name        string
+		headerValue string
+		wantChatID  int
+		wantError   *echo.HTTPError
+	}{
+		{
+			name:        "valid header",
+			headerValue: "123",
+			wantChatID:  123,
+			wantError:   nil,
+		},
+		{
+			name:        "missing header",
+			headerValue: "",
+			wantChatID:  0,
+			wantError:   echo.NewHTTPError(http.StatusBadRequest, "no header `Tg-Chat-Id` provided"),
+		},
+		{
+			name:        "invalid header value",
+			headerValue: "abc",
+			wantChatID:  0,
+			wantError:   echo.NewHTTPError(http.StatusBadRequest, "incorrect value of header `Tg-Chat-Id` provided"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.headerValue != "" {
+				req.Header.Set("Tg-Chat-Id", tt.headerValue)
+			}
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			chatID, err := handlers.ValidateTgChatHeader(c)
+
+			assert.Equal(t, tt.wantChatID, chatID)
+			assert.Equal(t, tt.wantError, err)
+		})
+	}
+}
+
+func TestAddLink(t *testing.T) {
+	tests := []struct {
+		name         string
+		headerValue  string
+		requestBody  string
+		mockSetup    func(m *mockService)
+		wantStatus   int
+		wantResponse string
+	}{
+		{
+			name:        "success with token",
+			headerValue: "123",
+			requestBody: `{"link": "https://example.com", "tag": "test", "token_id": 1}`,
+			mockSetup: func(m *mockService) {
+				m.On("AddLink", 123, model.LinkRequestDTO{
+					Link:    "https://example.com",
+					Tag:     "test",
+					TokenID: 1,
+				}).Return(model.NewLink(1, "https://example.com", "test", 1), nil)
+			},
+			wantStatus:   http.StatusCreated,
+			wantResponse: `{"id":1,"link":"https://example.com","tag":"test","token_id":1}`,
+		},
+		{
+			name:        "invalid request - missing link",
+			headerValue: "123",
+			requestBody: `{"tag": "test"}`,
+			mockSetup:   func(m *mockService) {},
+			wantStatus:  http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.requestBody))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			if tt.headerValue != "" {
+				req.Header.Set("Tg-Chat-Id", tt.headerValue)
+			}
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			mockSvc := new(mockService)
+			if tt.mockSetup != nil {
+				tt.mockSetup(mockSvc)
+			}
+			h := handlers.NewHandler(mockSvc)
+
+			err := h.AddLink(c)
+
+			if tt.wantStatus >= 400 {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantStatus, rec.Code)
+				assert.JSONEq(t, tt.wantResponse, rec.Body.String())
+			}
+
+			if tt.mockSetup != nil {
+				mockSvc.AssertExpectations(t)
+			}
+		})
+	}
+}
+
+func TestDeleteLink(t *testing.T) {
+	tests := []struct {
+		name         string
+		headerValue  string
+		requestBody  string
+		mockSetup    func(m *mockService)
+		wantStatus   int
+		wantResponse string
+	}{
+		{
+			name:        "success",
+			headerValue: "123",
+			requestBody: `{"link": "https://example.com"}`,
+			mockSetup: func(m *mockService) {
+				m.On("DeleteLink", 123, model.LinkDeleteRequestDTO{
+					Link: "https://example.com",
+				}).Return(model.NewLink(1, "https://example.com", "test", 1), nil)
+			},
+			wantStatus:   http.StatusOK,
+			wantResponse: `{"id":1,"link":"https://example.com","tag":"test","token_id":1}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(tt.requestBody))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			if tt.headerValue != "" {
+				req.Header.Set("Tg-Chat-Id", tt.headerValue)
+			}
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			mockSvc := new(mockService)
+			if tt.mockSetup != nil {
+				tt.mockSetup(mockSvc)
+			}
+			h := handlers.NewHandler(mockSvc)
+
+			err := h.DeleteLink(c)
+
+			if tt.wantStatus >= 400 {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantStatus, rec.Code)
+				assert.JSONEq(t, tt.wantResponse, rec.Body.String())
+			}
+
+			mockSvc.AssertExpectations(t)
+		})
+	}
+}
+
+func TestGetLinks(t *testing.T) {
+	tests := []struct {
+		name         string
+		headerValue  string
+		mockSetup    func(m *mockService)
+		wantStatus   int
+		wantResponse string
+	}{
+		{
+			name:        "success with links",
+			headerValue: "123",
+			mockSetup: func(m *mockService) {
+				m.On("GetLinks", 123).Return([]model.Link{
+					*model.NewLink(1, "https://example.com", "test1", 1),
+					*model.NewLink(2, "https://example.org", "test2", 0),
+				}, nil)
+			},
+			wantStatus: http.StatusOK,
+			wantResponse: `[
+                {"id":1,"link":"https://example.com","tag":"test1","token_id":1},
+                {"id":2,"link":"https://example.org","tag":"test2","token_id":0}
+            ]`,
+		},
+		{
+			name:        "empty list",
+			headerValue: "123",
+			mockSetup: func(m *mockService) {
+				m.On("GetLinks", 123).Return([]model.Link{}, nil)
+			},
+			wantStatus:   http.StatusOK,
+			wantResponse: `[]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.headerValue != "" {
+				req.Header.Set("Tg-Chat-Id", tt.headerValue)
+			}
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			mockSvc := new(mockService)
+			if tt.mockSetup != nil {
+				tt.mockSetup(mockSvc)
+			}
+			h := handlers.NewHandler(mockSvc)
+
+			err := h.GetLinks(c)
+
+			if tt.wantStatus >= 400 {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantStatus, rec.Code)
+				assert.JSONEq(t, tt.wantResponse, rec.Body.String())
 			}
 
 			mockSvc.AssertExpectations(t)
