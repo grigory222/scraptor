@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -55,21 +56,14 @@ func ErrorHandlerMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 			code := http.StatusInternalServerError
 
-			if he, ok := err.(*echo.HTTPError); ok {
+			var he *echo.HTTPError
+			if errors.As(err, &he) {
 				code = he.Code
 				apiError = NewAPIError(
 					he.Message.(string),
 					strconv.Itoa(he.Code),
 					"HTTPError",
 					he.Message.(string),
-				)
-			} else {
-				// Генерируем ошибку по умолчанию для других типов ошибок
-				apiError = NewAPIError(
-					"An unexpected error occurred",
-					"500",
-					"InternalServerError",
-					err.Error(),
 				)
 			}
 
