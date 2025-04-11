@@ -1,7 +1,7 @@
 package service
 
 import (
-	"errors"
+	"io"
 	"log/slog"
 
 	"github.com/grigory222/scraptor/internal/model"
@@ -9,26 +9,20 @@ import (
 )
 
 type Service struct {
-	db  *repository.Postgres
+	db  repository.Repository
 	log *slog.Logger
 }
 
-var (
-	ErrNotFound      = errors.New("tg chat not found")
-	ErrAlreadyExists = errors.New("tg chat already exists")
-)
-
-func NewService(db *repository.Postgres, log *slog.Logger) *Service {
+func NewService(db repository.Repository, log *slog.Logger) *Service {
+	if log == nil {
+		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	return &Service{db: db, log: log}
-}
-
-func (s *Service) GetHello() string {
-	return "Hello, world!"
 }
 
 func (s *Service) AddTgChat(id int) error {
 	err := s.db.AddChat(id)
-	if err != nil {
+	if err != nil && s.log != nil {
 		s.log.Error(err.Error())
 	}
 
@@ -38,13 +32,15 @@ func (s *Service) AddTgChat(id int) error {
 func (s *Service) DeleteTgChat(id int) error {
 	err := s.db.DeleteTgChat(id)
 	if err != nil {
-		s.log.Error(err.Error())
+		if s.log != nil {
+			s.log.Error(err.Error())
+		}
+
 		return err
 	}
 	return nil
 }
 
-// =========== Links ===========
 func (s *Service) AddLink(chatID int, link model.LinkRequestDTO) (*model.Link, error) {
 	linkDAO, err := s.db.AddLink(link.Link, link.Tag, link.TokenID, chatID)
 	if err != nil {
@@ -64,7 +60,9 @@ func (s *Service) GetLinks(chatID int) ([]model.Link, error) {
 func (s *Service) DeleteLink(chatID int, link model.LinkDeleteRequestDTO) (*model.Link, error) {
 	linkDeleted, err := s.db.DeleteLink(chatID, link.Link)
 	if err != nil {
-		s.log.Error(err.Error())
+		if s.log != nil {
+			s.log.Error(err.Error())
+		}
 		return nil, err
 	}
 	return linkDeleted, nil

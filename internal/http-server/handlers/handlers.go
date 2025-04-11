@@ -13,18 +13,17 @@ import (
 )
 
 type Handler struct {
-	service *service.Service
+	service service.IService
 }
 
 // NewHandler создаёт новый хендлер
-func NewHandler(svc *service.Service) *Handler {
+func NewHandler(svc service.IService) *Handler {
 	return &Handler{service: svc}
 }
 
 // RegisterRoutes регистрирует маршруты
-func RegisterRoutes(e *echo.Echo, svc *service.Service) {
+func RegisterRoutes(e *echo.Echo, svc service.IService) {
 	h := NewHandler(svc)
-	e.GET("/hello", h.Hello)
 	e.POST("/tg-chat/:id", h.AddTgChat)
 	e.DELETE("/tg-chat/:id", h.DeleteTgChat)
 	e.POST("/links", h.AddLink)
@@ -40,14 +39,10 @@ func RegisterMiddlewares(e *echo.Echo) {
 	e.Use(middlewares.ErrorHandlerMiddleware)
 }
 
-func (h *Handler) Hello(c echo.Context) error {
-	return c.HTML(http.StatusOK, h.service.GetHello())
-}
-
 func (h *Handler) AddTgChat(c echo.Context) error {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return err
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	err = h.service.AddTgChat(id)
 	if err != nil {
@@ -70,7 +65,7 @@ func (h *Handler) DeleteTgChat(c echo.Context) error {
 
 // ============= Links =============
 
-func validateTgChatHeader(c echo.Context) (int, *echo.HTTPError) {
+func ValidateTgChatHeader(c echo.Context) (int, *echo.HTTPError) {
 	// 	Tg-Chat-Id from header
 	stringChatID := c.Request().Header.Get("Tg-Chat-Id")
 	if stringChatID == "" {
@@ -89,7 +84,11 @@ func (h *Handler) AddLink(c echo.Context) error {
 		return err
 	}
 
-	chatID, httpErr := validateTgChatHeader(c)
+	if linkReq.Link == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "link field is required")
+	}
+
+	chatID, httpErr := ValidateTgChatHeader(c)
 	if httpErr != nil {
 		return httpErr
 	}
@@ -111,7 +110,7 @@ func (h *Handler) DeleteLink(c echo.Context) error {
 		return err
 	}
 
-	chatID, httpErr := validateTgChatHeader(c)
+	chatID, httpErr := ValidateTgChatHeader(c)
 	if httpErr != nil {
 		return httpErr
 	}
@@ -125,7 +124,7 @@ func (h *Handler) DeleteLink(c echo.Context) error {
 }
 
 func (h *Handler) GetLinks(c echo.Context) error {
-	chatID, httpErr := validateTgChatHeader(c)
+	chatID, httpErr := ValidateTgChatHeader(c)
 	if httpErr != nil {
 		return httpErr
 	}
